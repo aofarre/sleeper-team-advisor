@@ -218,6 +218,9 @@ function analyzeTrade({ giveText, receiveText, prompt, roster, league, players }
   const receiveValue = numericValue(receive);
   const known = [...give, ...receive].filter((asset) => asset.id);
   const unknown = [...give, ...receive].filter((asset) => !asset.id);
+  const needSummary = needs.length
+    ? `Current roster flags: ${needs.map((need) => `${need.position} (${need.shortage ? `${need.shortage} starter short` : `${need.depth} depth`})`).join(", ")}.`
+    : "No basic positional shortage is currently detected.";
   const valueSummary = giveValue === null || receiveValue === null
     ? "No numeric verdict: every listed asset needs an attributed numeric valuation before totals can be compared."
     : `Attributed valuation totals: give ${giveValue.toFixed(1)}, receive ${receiveValue.toFixed(1)} (${(receiveValue - giveValue).toFixed(1)} net).`;
@@ -225,7 +228,7 @@ function analyzeTrade({ giveText, receiveText, prompt, roster, league, players }
     headline: giveValue !== null && receiveValue !== null ? (receiveValue > giveValue ? "Numerically favorable by imported values" : receiveValue < giveValue ? "Numerically unfavorable by imported values" : "Numerically even by imported values") : "Context-limited assessment",
     valueSummary,
     positionSummary: tradePositionEffect(give, receive, needs),
-    needSummary: needs.length ? `Current roster flags: ${needs.map((need) => `${need.position} (${need.shortage ? `${need.shortage} starter short` : `${need.depth} depth`)}`).join(", ")}.` : "No basic positional shortage is currently detected.",
+    needSummary,
     give, receive, known, unknown,
     prompt: String(prompt || "").trim(),
     source: activeSnapshot()?.source || null,
