@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { MAX_LEAGUES, currentWeek, findRoster, rosterGroups, rosterNeeds, rankFromRosters, freeAgents, transactionSummary } = require("../game.js");
+const { MAX_LEAGUES, SNAPSHOT_SCHEMA_VERSION, currentWeek, findRoster, rosterGroups, rosterNeeds, rankFromRosters, freeAgents, transactionSummary, parseSnapshot, parseTradeAssets, analyzeTrade } = require("../game.js");
 
 const players = {
   qb: { first_name: "Quarter", last_name: "Back", position: "QB", team: "AAA" },
@@ -38,4 +38,30 @@ test("ranks record position and returns only unrostered position candidates", ()
 test("summarizes Sleeper transaction player changes", () => {
   const summary = transactionSummary([{ type: "waiver", status: "complete", status_updated: 2, adds: { rb: 1 }, drops: { qb: 1 } }], players);
   assert.deepEqual(summary[0], { type: "waiver", status: "complete", adds: ["Run Back"], drops: ["Quarter Back"] });
+});
+test("validates an attributed local player-context snapshot", () => {
+  const snapshot = parseSnapshot({
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    generatedAt: "2026-09-29T14:00:00.000Z",
+    source: { name: "Licensed context export", url: "https://example.test/context" },
+    playerContext: { wr: { valuation: 25, projection: 11.5, status: "Questionable" } },
+  });
+  assert.equal(snapshot.source.name, "Licensed context export");
+  assert.equal(snapshot.playerContext.wr.valuation, 25);
+  assert.throws(() => parseSnapshot({ schemaVersion: 1, generatedAt: "invalid", source: { name: "Source" }, playerContext: {} }), /generatedAt/);
+  assert.throws(() => parseSnapshot({ schemaVersion: 1, generatedAt: "2026-09-29T14:00:00.000Z", source: { name: "Source" }, playerContext: { wr: { projection: "unknown" } } }), /Projection/);
+});
+test("resolves trade assets by Sleeper ID or full name without inventing a valuation", () => {
+  assert.deepEqual(parseTradeAssets("Wide Out\nrb", players).map((asset) => [asset.id, asset.name, asset.valuation]), [["wr", "Wide Out", null], ["rb", "Run Back", null]]);
+  const analysis = analyzeTrade({
+    giveText: "Wide Out",
+    receiveText: "Run Back",
+    prompt: "Need RB depth",
+    roster: { players: ["qb", "wr"] },
+    league: { roster_positions: ["QB", "RB", "RB", "WR", "WR", "TE"] },
+    players,
+  });
+  assert.equal(analysis.headline, "Context-limited assessment");
+  assert.match(analysis.valueSummary, /No numeric verdict/);
+  assert.match(analysis.needSummary, /RB/);
 });

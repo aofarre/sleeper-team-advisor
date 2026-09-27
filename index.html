@@ -50,6 +50,65 @@
         <p>Sleeper’s public API can provide league, roster, matchup, player-directory, and transaction data. It does <strong>not</strong> provide trusted real-time expert projections, injury analysis, or news. This app never invents those signals: projection fields and risk notes are manual inputs, and matchup projections appear only if Sleeper actually supplies them.</p>
       </section>
 
+      <section class="card intelligence-card" aria-labelledby="intelligence-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">TUESDAY WAIVER INTELLIGENCE</p><h2 id="intelligence-title">Sources and weekly snapshot</h2></div>
+          <span id="snapshot-status" class="tag">No context imported</span>
+        </div>
+        <p class="help-text">The deployed Tuesday baseline is a timestamped public Sleeper player-directory snapshot. It can establish player status and identity, but cannot establish league-specific availability, injury news, or projections. Add those only through a lawful manual or licensed-provider snapshot that names its source.</p>
+        <div class="source-grid">
+          <label>Context source name
+            <input id="snapshot-source-name-input" type="text" placeholder="Example: Your licensed provider export" />
+          </label>
+          <label>Source URL or attribution
+            <input id="snapshot-source-url-input" type="url" placeholder="https://provider.example/source" />
+          </label>
+          <label>Optional secure trade endpoint
+            <input id="trade-endpoint-input" type="url" inputmode="url" placeholder="https://your-service.example/api/trade-analysis" />
+          </label>
+          <button id="save-source-config-button" class="button" type="button">Save local config</button>
+        </div>
+        <div class="setup-actions">
+          <button id="load-baseline-button" class="button" type="button">Load deployed Tuesday baseline</button>
+          <label class="file-label">Import snapshot JSON <input id="snapshot-file-input" type="file" accept="application/json" /></label>
+        </div>
+        <label>Manual or licensed-provider snapshot JSON
+          <textarea id="snapshot-json-input" spellcheck="false" placeholder='Paste the documented snapshot format. It remains in this browser until you remove local data.'></textarea>
+        </label>
+        <div class="setup-actions">
+          <button id="import-snapshot-button" class="button primary" type="button">Validate &amp; import locally</button>
+          <button id="clear-snapshot-button" class="button danger" type="button">Remove imported context</button>
+        </div>
+        <p id="snapshot-message" class="help-text">Source configuration, endpoint URL, and imported context are local to this browser. No provider credential can be entered or stored here.</p>
+      </section>
+
+      <section class="card trade-analyzer" aria-labelledby="trade-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">ON-DEMAND DECISION SUPPORT</p><h2 id="trade-title">Trade Analyzer</h2></div>
+          <span class="read-only">LOCAL DETERMINISTIC MODE</span>
+        </div>
+        <p class="help-text">Assess a proposal against the selected Sleeper roster, starter-count needs, and the attributed valuation/news context you imported. Unknown values remain unknown; the analyzer does not fabricate market values or news.</p>
+        <div class="trade-grid">
+          <label>League
+            <select id="trade-league-select" disabled><option>Load a league to analyze</option></select>
+          </label>
+          <label>You give
+            <textarea id="trade-give-input" placeholder="One player or asset per line"></textarea>
+          </label>
+          <label>You receive
+            <textarea id="trade-receive-input" placeholder="One player or asset per line"></textarea>
+          </label>
+          <label>Question or constraint <span class="optional">(optional)</span>
+            <textarea id="trade-prompt-input" placeholder="Example: I need a starter for Week 5; is this worth it?"></textarea>
+          </label>
+        </div>
+        <div class="setup-actions">
+          <button id="analyze-trade-button" class="button primary" type="button">Analyze proposal</button>
+          <button id="analyze-trade-with-endpoint-button" class="button" type="button" disabled>Use configured secure endpoint</button>
+        </div>
+        <div id="trade-analysis-result" class="analysis-result" aria-live="polite"><p class="notice">Load a league, enter the assets on each side, then analyze. This tool never submits a trade to Sleeper.</p></div>
+      </section>
+
       <section id="empty-state" class="empty-state card">
         <h2>Add your public Sleeper league IDs to begin.</h2>
         <p>Your username lets the advisor identify your roster. If it cannot, the league reports a recoverable message and keeps the rest of your saved data available.</p>
