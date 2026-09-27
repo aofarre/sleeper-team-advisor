@@ -47,4 +47,4 @@ Sleeper’s public API is useful for roster and league state, but it does **not*
 
 The included GitHub Actions workflow deploys the repository root whenever `main` is pushed. Set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The deployed app is available at:
 
-`https://aofarre.github.io/fantasy-draft-assistant/`
+`https://aofarre.github.io/sleeper-team-advisor/`
