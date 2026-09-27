@@ -3,101 +3,60 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A transparent, read-only NFL fantasy draft assistant for Sleeper and mock drafts." />
-    <title>Draft Room | NFL Fantasy Assistant</title>
+    <meta name="description" content="A private, local-first Sleeper fantasy football team advisor." />
+    <title>Roster Signal | Sleeper Team Advisor</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#draft-room">Skip to draft room</a>
-    <main class="shell" id="draft-room">
+    <a class="skip-link" href="#advisor">Skip to team advisor</a>
+    <main class="shell" id="advisor">
       <header class="topbar">
-        <a class="brand" href="./" aria-label="Draft Room home"><span class="brand-mark">DR</span><span>DRAFT ROOM</span></a>
-        <p id="connection-status" class="status" role="status">Mock draft ready</p>
+        <a class="brand" href="./" aria-label="Roster Signal home"><span class="brand-mark">RS</span><span>ROSTER SIGNAL</span></a>
+        <p id="app-status" class="status" role="status">Ready for your Sleeper leagues</p>
       </header>
 
       <section class="hero" aria-labelledby="page-title">
-        <p class="eyebrow">READ-ONLY SLEEPER + OFFLINE MOCKS</p>
-        <h1 id="page-title">Make every pick with a clear plan.</h1>
-        <p>Transparent rankings balance projections, roster needs, scarcity, ADP, tiers, and your own risk notes. This tool never submits a Sleeper pick.</p>
+        <p class="eyebrow">IN-SEASON · READ-ONLY · LOCAL-FIRST</p>
+        <h1 id="page-title">Weekly decisions, grounded in your actual roster.</h1>
+        <p>Load up to two public Sleeper leagues, review roster pressure and available players, then record your own projection and risk calls. Nothing is sent to Sleeper.</p>
       </section>
 
-      <section class="control-panel card" aria-labelledby="setup-title">
+      <section class="card setup-card" aria-labelledby="setup-title">
         <div class="section-heading">
-          <div><p class="eyebrow">SETUP</p><h2 id="setup-title">Connect or start a mock</h2></div>
-          <span class="read-only">NO PICK SUBMISSION</span>
+          <div><p class="eyebrow">PRIVATE CONNECTION</p><h2 id="setup-title">Your Sleeper leagues</h2></div>
+          <span class="read-only">READ-ONLY API</span>
         </div>
         <div class="setup-grid">
-          <label>Sleeper league or draft ID<input id="sleeper-id" type="text" placeholder="Paste a public ID" autocomplete="off" /></label>
-          <label>Poll interval<select id="poll-interval"><option value="0">Manual refresh</option><option value="60000" selected>Every 60 seconds</option><option value="120000">Every 2 minutes</option></select></label>
-          <button id="connect-button" class="button primary" type="button">Connect read-only</button>
-          <button id="refresh-button" class="button" type="button" disabled>Refresh now</button>
+          <label>Sleeper username
+            <input id="username-input" type="text" autocomplete="username" placeholder="Used to find your roster" />
+          </label>
+          <label>League 1 ID
+            <input id="league-one-input" type="text" autocomplete="off" placeholder="Public Sleeper league ID" />
+          </label>
+          <label>League 2 ID <span class="optional">(optional)</span>
+            <input id="league-two-input" type="text" autocomplete="off" placeholder="Second public league ID" />
+          </label>
+          <button id="save-connect-button" class="button primary" type="button">Save &amp; refresh</button>
         </div>
-        <p id="connection-message" class="help-text">Sleeper data is public where available. Connection failures stay visible and never block mock drafting.</p>
-        <div class="mock-grid">
-          <label>Mock teams<input id="team-count" type="number" min="2" max="20" value="12" /></label>
-          <label>Your draft slot<input id="user-slot" type="number" min="1" max="20" value="1" /></label>
-          <label>Roster format<select id="roster-format"><option value="standard">1 QB / 2 RB / 2 WR / 1 TE / 1 FLEX / K / DEF</option><option value="superflex" selected>Superflex (2 QB eligible)</option></select></label>
-          <button id="start-mock-button" class="button accent" type="button">Start fresh mock</button>
+        <div class="setup-actions">
+          <button id="refresh-button" class="button" type="button">Refresh weekly data</button>
+          <button id="reset-button" class="button danger" type="button">Remove local data</button>
         </div>
+        <p id="connection-message" class="help-text">League IDs and your username are stored only in this browser. The app calls documented public Sleeper endpoints directly; no account credentials are requested or stored.</p>
       </section>
 
-      <section class="workspace">
-        <aside class="left-rail">
-          <section class="card settings-card" aria-labelledby="scoring-title">
-            <div class="section-heading"><div><p class="eyebrow">YOUR MODEL</p><h2 id="scoring-title">Ranking inputs</h2></div></div>
-            <div class="inputs-grid">
-              <label>PPR<input id="ppr-input" type="number" min="0" max="2" step=".25" value="1" /></label>
-              <label>Pass TD<input id="pass-td-input" type="number" min="4" max="6" step=".5" value="4" /></label>
-              <label>Pass INT<input id="pass-int-input" type="number" min="-4" max="0" step=".5" value="-1" /></label>
-              <label>Need weight<input id="need-weight-input" type="number" min="0" max="30" value="16" /></label>
-              <label>Scarcity weight<input id="scarcity-weight-input" type="number" min="0" max="30" value="12" /></label>
-              <label>ADP weight<input id="adp-weight-input" type="number" min="0" max="20" value="8" /></label>
-              <label>Risk penalty<input id="risk-weight-input" type="number" min="0" max="20" value="8" /></label>
-            </div>
-            <p class="help-text">Projection scoring uses PPR and passing-TD settings. The other inputs are the maximum adjustment each factor can add or subtract.</p>
-          </section>
-
-          <section class="card" aria-labelledby="roster-title">
-            <div class="section-heading"><div><p class="eyebrow">YOUR ROSTER</p><h2 id="roster-title">Needs</h2></div><span id="roster-count" class="pill">0 players</span></div>
-            <div id="roster-list" class="roster-list"></div>
-          </section>
-
-          <section class="card" aria-labelledby="risk-title">
-            <div class="section-heading"><div><p class="eyebrow">MANUAL OVERRIDES</p><h2 id="risk-title">News / risk notes</h2></div></div>
-            <label>Player<select id="risk-player"></select></label>
-            <label>Risk adjustment (-20 to +10)<input id="risk-adjustment" type="number" min="-20" max="10" value="-5" /></label>
-            <label>Note<input id="risk-note" type="text" maxlength="100" placeholder="Example: monitor camp report" /></label>
-            <button id="save-risk-button" class="button" type="button">Save override</button>
-            <div id="risk-list" class="risk-list"></div>
-            <p class="help-text">No live injury or news feed is claimed. Add and maintain these notes yourself.</p>
-          </section>
-        </aside>
-
-        <div class="main-column">
-          <section class="card recommendation-card" aria-labelledby="recommendation-title">
-            <div class="section-heading"><div><p class="eyebrow" id="clock-label">YOUR TURN</p><h2 id="recommendation-title">Best available pick</h2></div><span id="pick-label" class="pick-label">Pick 1.01</span></div>
-            <div id="recommendation" class="recommendation"></div>
-            <div><h3>Alternatives</h3><div id="alternatives" class="alternatives"></div></div>
-          </section>
-
-          <section class="card" aria-labelledby="board-title">
-            <div class="section-heading"><div><p class="eyebrow">LIVE BOARD</p><h2 id="board-title">Draft board</h2></div><span id="draft-state" class="pill">Mock mode</span></div>
-            <div id="draft-board" class="draft-board" aria-live="polite"></div>
-          </section>
-
-          <section class="card player-card" aria-labelledby="players-title">
-            <div class="section-heading"><div><p class="eyebrow">AVAILABLE PLAYERS</p><h2 id="players-title">Ranked player pool</h2></div></div>
-            <div class="filters">
-              <label>Position<select id="position-filter"><option value="ALL">All positions</option><option>QB</option><option>RB</option><option>WR</option><option>TE</option><option>K</option><option>DEF</option></select></label>
-              <label>Search<input id="player-search" type="search" placeholder="Player or team" /></label>
-              <button id="show-all-button" class="button compact" type="button">Show drafted</button>
-            </div>
-            <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Player</th><th>Tier</th><th>ADP</th><th>Model</th><th>Why</th><th></th></tr></thead><tbody id="player-list"></tbody></table></div>
-          </section>
-        </div>
+      <section class="limitations card" aria-labelledby="limitations-title">
+        <div><p class="eyebrow">IMPORTANT LIMITATION</p><h2 id="limitations-title">Expert inputs stay yours</h2></div>
+        <p>Sleeper’s public API can provide league, roster, matchup, player-directory, and transaction data. It does <strong>not</strong> provide trusted real-time expert projections, injury analysis, or news. This app never invents those signals: projection fields and risk notes are manual inputs, and matchup projections appear only if Sleeper actually supplies them.</p>
       </section>
+
+      <section id="empty-state" class="empty-state card">
+        <h2>Add your public Sleeper league IDs to begin.</h2>
+        <p>Your username lets the advisor identify your roster. If it cannot, the league reports a recoverable message and keeps the rest of your saved data available.</p>
+      </section>
+      <section id="league-results" class="league-results" aria-live="polite"></section>
     </main>
-    <footer>Draft Room uses public Sleeper endpoints only. It cannot place, queue, or automate picks.</footer>
+    <footer>Roster Signal is an independent, read-only tool using Sleeper’s public API. It does not submit lineup, waiver, trade, or transaction changes.</footer>
     <script src="game.js"></script>
   </body>
 </html>

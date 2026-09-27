@@ -1,48 +1,50 @@
-# Draft Room
+# Roster Signal
 
-A local NFL fantasy draft assistant for **offline mock drafts** and **read-only public Sleeper drafts**. It runs entirely in the browser, has no build step, and never submits, queues, or automates a Sleeper pick.
+A mobile-friendly, static **Sleeper Fantasy Team Advisor** for in-season decisions. It runs entirely in the browser, stores its small amount of user input locally, and never submits a Sleeper lineup, waiver claim, trade, or transaction.
 
 ## Run locally
 
-Serve the repository root so browser requests to Sleeper work consistently:
+Serve the repository root:
 
 ```powershell
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000` in a modern browser. For the included logic tests, use Node 18+:
+Open `http://localhost:8000`. With Node 18+ installed, run the targeted logic tests:
 
 ```powershell
-node --test tests/draft-assistant.test.js
+node --test tests/sleeper-advisor.test.js
 ```
 
 ## Use it
 
-1. **Start a mock:** Set the number of teams, your slot, and roster format, then select **Start fresh mock**. Use **Draft** or **Mark drafted** in the player table to move the board forward. Your slot builds the roster-needs model.
-2. **Connect Sleeper read-only:** Paste a public Sleeper draft ID or league ID, then choose **Connect read-only**. The assistant resolves a league to its current `draft_id` where present, reads the public draft and picks endpoints, and refreshes at the selected manual, 60-second, or 2-minute interval.
-3. **Tune the model:** PPR, passing-touchdown, and passing-interception values adjust projected points. Need, scarcity, ADP, and risk weights set the maximum impact of those transparent factors. Every player row shows the resulting model score and its factor breakdown.
-4. **Maintain risk notes:** Use **News / risk notes** to add your own player-specific score adjustment and note. There is no live injury/news provider, so the app does not represent those notes as real-time data.
+1. Enter your public Sleeper username and up to two public NFL league IDs, then select **Save & refresh**.
+2. The advisor resolves your Sleeper user ID, identifies your roster in each league, and loads the current public league metadata, users, rosters, player directory, regular-season matchup data, and current/prior-week transactions.
+3. Review the reported starters, bench, IR/reserve, record, rank, roster-count needs, matchup score where Sleeper returns it, and locally computed unrostered candidate list.
+4. Enter your own start/sit projection and risk notes. Those inputs are intentionally manual and remain in your browser. Use **Remove local data** to delete the saved username, league IDs, and notes.
 
-## Data and limits
+## Data, privacy, and limitations
 
-Sleeper mode only uses public, read-only endpoints:
+The app uses documented, read-only Sleeper endpoints directly from the browser:
 
-- `GET /v1/draft/{draft_id}`
-- `GET /v1/draft/{draft_id}/picks`
-- `GET /v1/league/{league_id}` when resolving a league ID
-- `GET /v1/players/nfl` once per browser cache window (seven days) to improve player-name resolution
+- `GET /v1/user/{username}`
+- `GET /v1/state/nfl`
+- `GET /v1/league/{league_id}`, `/users`, `/rosters`
+- `GET /v1/league/{league_id}/matchups/{week}`
+- `GET /v1/league/{league_id}/transactions/{week}`
+- `GET /v1/players/nfl`
 
-The large public player directory is never included in the polling loop. Draft metadata and picks are the only resources polled, with a minimum automatic interval of 60 seconds. If a request fails, the last board remains visible and the failure is shown in the connection status.
+No credentials, cookies, roster edits, or server-side storage are used. `localStorage` holds only the supplied username, up to two league IDs, and manually entered start/sit notes.
 
-The built-in player pool contains sample preseason-style projections and ADP values for every standard fantasy position (QB, RB, WR, TE, K, and DEF). Treat those values as editable local decision inputs, not live rankings or advice.
+Sleeper’s public API is useful for roster and league state, but it does **not** provide trusted real-time expert projections, injury analysis, or news. For that reason:
+
+- Matchup scores are shown only when returned by Sleeper; no matchup projection is fabricated.
+- “Waiver / free-agent candidates” are unrostered player-directory entries prioritized by simple roster-count needs, not a claim recommendation or live availability guarantee.
+- Projection and risk fields are visibly manual expert inputs, never presented as Sleeper or real-time news data.
+- Record/rank are shown only from available public roster settings and a simple record ordering; tiebreak rules can differ by league.
 
 ## Deploy to GitHub Pages
 
-The included GitHub Actions workflow deploys the static repository root whenever `main` is pushed. The application uses relative asset paths, so it works at GitHub Pages' repository base path without additional configuration.
-
-1. In the repository, go to **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**.
-2. Push the desired deployment branch. The **Deploy static site to Pages** workflow publishes it automatically.
-
-The deployment URL is:
+The included GitHub Actions workflow deploys the repository root whenever `main` is pushed. Set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The deployed app is available at:
 
 `https://aofarre.github.io/fantasy-draft-assistant/`
