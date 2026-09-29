@@ -19,7 +19,8 @@ Roster Signal does **not** have a configured live injury, news, projection, rank
 2. Review reported starters, bench, IR/reserve, record, rank, roster-count needs, public matchup scores, transactions, and unrostered candidates.
 3. For Tuesday waiver work, select **Load deployed Tuesday baseline**. Its badge and message identify its source and generated time. It is a public Sleeper directory baseline, not live news.
 4. If you lawfully receive projections, injuries, valuations, or news from another source, configure its display name and attribution URL, then import a snapshot. The app validates and stores it locally.
-5. Open **Trade Analyzer**, choose a refreshed league, list the assets being given and received one per line, and select **Analyze proposal**. The default assessment compares only attributed values, roster-count effects, and explicitly imported player context.
+5. Review the **Tuesday waiver review** in each loaded league. It shows the reported waiver type, budget, processing settings, roster positions, and playoff start week where Sleeper provides them, then offers up to five ranked add/drop proposals. Mark a proposal as reviewed only after checking the Sleeper player pool and waiver screen; marking it does not create or submit a transaction.
+6. Open **Trade Analyzer**, choose a refreshed league, list the assets being given and received one per line, and select **Analyze proposal**. The default assessment compares only attributed values, roster-count effects, and explicitly imported player context.
 
 Use **Remove local data** to remove the username, league IDs, decisions, source configuration, imported snapshot, and optional endpoint URL from the browser.
 
@@ -54,6 +55,12 @@ Imports must be JSON with `schemaVersion: 1`, a valid `generatedAt` time, a name
 ```
 
 The source name and URL are displayed alongside the result. Import only data that your provider license and applicable terms permit you to use. The project intentionally does not scrape third-party sites, ship any provider credentials, or use undocumented endpoints.
+
+### Tuesday waiver-review inputs and limits
+
+The waiver review uses public Sleeper league settings, roster positions, your roster, league rosters, player-directory fields, current NFL week, and current/prior-week league transactions. It calculates a player as available only when that player is absent from the loaded league rosters. It incorporates a player bye week and the league playoff start week only when those fields are reported by Sleeper.
+
+Recommendations are prioritization aids, not projections or guaranteed claims. A suggestion’s multi-week explanation identifies basic positional depth, near-term reported bye timing, and playoff timing; it treats rest-of-season upside, projected usage, injuries, and news as unknown unless they occur in the imported, source-attributed snapshot. The app never scrapes third-party news sites. To use external waiver news responsibly, obtain it through a provider/API/export you are permitted to use, import the JSON snapshot, and include a source URL for each context item. The review links that source and shows when no live news context is available.
 
 ## Tuesday refresh workflow
 

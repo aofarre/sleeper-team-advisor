@@ -85,6 +85,13 @@ textarea { min-height:4rem; resize:vertical; }
 .analysis-result p:last-child { margin-bottom:0; }
 .analysis-result strong { color:var(--navy); }
 .context-list { margin:.6rem 0 0; padding-left:1.25rem; color:var(--muted); line-height:1.5; }
+.waiver-review-list { display:grid; gap:.65rem; margin-top:.8rem; }
+.waiver-recommendation { padding:.75rem; border:1px solid #cfdbf1; border-radius:.55rem; background:#fff; }
+.waiver-recommendation > div:first-child { display:flex; align-items:center; flex-wrap:wrap; gap:.45rem; }
+.waiver-recommendation small { color:var(--muted); }
+.waiver-recommendation p { margin:.5rem 0 0; color:#40506f; font-size:.8rem; line-height:1.45; }
+.review-check { display:flex; align-items:flex-start; gap:.45rem; margin-top:.65rem; color:var(--ink); font-size:.78rem; font-weight:700; }
+.review-check input { width:auto; min-height:0; margin-top:.15rem; }
 footer { padding:1rem; color:var(--muted); font-size:.75rem; text-align:center; }
 @media (max-width:1050px) { .setup-grid,.source-grid,.trade-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .league-grid { grid-template-columns:1fr; } }
 @media (max-width:620px) { .hero { padding-top:2.5rem; } .setup-grid,.limitations,.source-grid,.trade-grid { grid-template-columns:1fr; } .topbar,.league-top { align-items:flex-start; flex-direction:column; } .stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .matchup { grid-template-columns:1fr auto 1fr; } .league-card { padding:.85rem; } .subcard { padding:.8rem; } .decision-table { min-width:590px; } .subcard:has(.decision-table) { overflow:auto; } }
