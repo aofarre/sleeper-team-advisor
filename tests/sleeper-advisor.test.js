@@ -129,6 +129,62 @@ test("scores every eligible candidate before ranking, so a high-signal Braelon A
   assert.match(review.adds[0].reasons.join(" "), /Sleeper 7-day adds 50/);
   assert.match(review.adds[0].reasons.join(" "), /attributed player update 1h ago/);
 });
+test("uses cross-position roster fit so redundant TE depth does not dominate overall waiver priorities", () => {
+  const fixturePlayers = {
+    qb: { first_name: "Roster", last_name: "Quarterback", position: "QB", team: "AAA" },
+    rb: { first_name: "Roster", last_name: "Runningback", position: "RB", team: "BBB" },
+    wr: { first_name: "Roster", last_name: "Wideout", position: "WR", team: "CCC" },
+    mcbride: { first_name: "Trey", last_name: "McBride", position: "TE", team: "ARI", search_rank: 22 },
+    likely: { first_name: "Isaiah", last_name: "Likely", position: "TE", team: "NYG", search_rank: 105 },
+    middlingTe: { first_name: "Middling", last_name: "Tight End", position: "TE", team: "DDD", active: true },
+    strongRb: { first_name: "Strong", last_name: "Runner", position: "RB", team: "EEE", active: true },
+    strongWr: { first_name: "Strong", last_name: "Receiver", position: "WR", team: "FFF", active: true },
+    strongQb: { first_name: "Strong", last_name: "Quarterback", position: "QB", team: "GGG", active: true },
+  };
+  const common = {
+    roster: { players: ["qb", "rb", "wr", "mcbride", "likely"], starters: ["qb", "rb", "wr", "mcbride"] },
+    rosters: [{ players: ["qb", "rb", "wr", "mcbride", "likely"] }],
+    league: { roster_positions: ["QB", "RB", "WR", "TE"], settings: {} },
+    players: fixturePlayers,
+    week: 4,
+    now: Date.parse("2026-09-29T18:00:00.000Z"),
+  };
+  const review = buildWaiverReview({
+    ...common,
+    playerContext: {
+      strongRb: { trendAdds: 100, trendDrops: 0, editorialMentions: [] },
+      strongWr: { trendAdds: 90, trendDrops: 0, editorialMentions: [] },
+      strongQb: { trendAdds: 80, trendDrops: 0, editorialMentions: [] },
+      middlingTe: { trendAdds: 5, trendDrops: 0, editorialMentions: [] },
+    },
+  });
+  const orderedIds = review.adds.map((candidate) => candidate.id);
+  assert.ok(orderedIds.indexOf("strongRb") < orderedIds.indexOf("middlingTe"));
+  assert.ok(orderedIds.indexOf("strongWr") < orderedIds.indexOf("middlingTe"));
+  assert.ok(orderedIds.indexOf("strongQb") < orderedIds.indexOf("middlingTe"));
+  assert.match(review.adds.find((candidate) => candidate.id === "middlingTe").reasons.join(" "), /replacement coverage reduces marginal value/);
+
+  const exceptionalTeReview = buildWaiverReview({
+    ...common,
+    playerContext: {
+      strongRb: { trendAdds: 100, trendDrops: 0, editorialMentions: [] },
+      middlingTe: { trendAdds: 5, trendDrops: 0, editorialMentions: [] },
+      exceptionalTe: {
+        projection: 25,
+        valuation: 100,
+        trendAdds: 1000,
+        trendDrops: 0,
+        editorialMentions: [{ source: "RotoWire public NFL RSS", title: "Exceptional Tight End: Expanded role", url: "https://example.test/exceptional-te", publishedAt: "2026-09-29T17:00:00.000Z" }],
+      },
+    },
+    players: {
+      ...fixturePlayers,
+      exceptionalTe: { first_name: "Exceptional", last_name: "Tight End", position: "TE", team: "HHH", active: true },
+    },
+  });
+  assert.equal(exceptionalTeReview.adds[0].id, "exceptionalTe");
+  assert.match(exceptionalTeReview.adds[0].reasons.join(" "), /overall priority/);
+});
 test("normalizes automated Sleeper sources and preserves partial source failures", async () => {
   const { normalizeTrending, parseRssItems, matchEditorialItems, buildAutomatedSnapshot } = await import("../scripts/refresh-sleeper-snapshot.mjs");
   assert.deepEqual(normalizeTrending([{ player_id: "wr", count: 42 }, { player_id: "", count: 2 }, { player_id: "bad", count: "unknown" }]), { wr: 42 });

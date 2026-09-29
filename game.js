@@ -184,15 +184,52 @@ function rosterTargetCount(league, position) {
   if (directSlots) return directSlots;
   return position === "QB" ? 1 : position === "TE" ? 1 : 0;
 }
-function addReason(candidate, needs, currentWeek, playoffWeek, playerContext, now) {
-  const player = candidate.player;
-  const position = positionOf(player);
-  const need = needs.find((item) => item.position === position);
+function directorySearchRank(player) {
+  const rank = Number(player?.search_rank);
+  return Number.isFinite(rank) && rank > 0 ? rank : null;
+}
+function rosterPositionFit(position, roster, league, players, playerContext) {
+  const playerIds = safeArray(roster?.players).filter((id) => positionOf(players[id]) === position);
+  const directSlots = rosterTargetCount(league, position);
+  const shortage = Math.max(0, directSlots - playerIds.length);
+  const ranks = playerIds.map((id) => directorySearchRank(players[id])).filter(Boolean).sort((a, b) => a - b);
+  const valuations = playerIds.map((id) => playerContextFor(id, playerContext)?.valuation).filter(Number.isFinite).sort((a, b) => b - a);
+  const primaryCovered = (ranks[0] !== undefined && ranks[0] <= 50) || (valuations[0] !== undefined && valuations[0] >= 60);
+  const backupCovered = (ranks[1] !== undefined && ranks[1] <= 150) || (valuations[1] !== undefined && valuations[1] >= 35);
+  const surplus = Math.max(0, playerIds.length - directSlots);
+  let score = shortage * 55;
+  if (!shortage && playerIds.length <= directSlots) score += 8;
+  if (surplus) score -= surplus * 12;
+  if (!shortage && primaryCovered) score -= 10;
+  if (surplus && backupCovered) score -= 15;
+  const evidence = [];
+  if (shortage) evidence.push(`${position} is ${shortage} direct starter short`);
+  else evidence.push(`${playerIds.length} ${position} rostered for ${directSlots || 0} direct starter slot${directSlots === 1 ? "" : "s"}`);
+  if (ranks.length) evidence.push(`incumbent directory search rank${ranks.length === 1 ? "" : "s"} #${ranks.slice(0, 2).join(" / #")}`);
+  else if (valuations.length) evidence.push("imported incumbent valuation coverage");
+  if (surplus && (primaryCovered || backupCovered)) evidence.push("replacement coverage reduces marginal value");
+  return { score, evidence, shortage, surplus, primaryCovered, backupCovered };
+}
+function signalScore(context, now) {
+  return (Number.isFinite(context?.projection) ? Math.min(25, context.projection) : 0)
+    + (Number.isFinite(context?.valuation) ? Math.min(20, context.valuation / 5) : 0)
+    + (Number.isFinite(context?.trendAdds) ? Math.min(25, Math.log10(context.trendAdds + 1) * 12) : 0)
+    - (Number.isFinite(context?.trendDrops) ? Math.min(10, Math.log10(context.trendDrops + 1) * 5) : 0)
+    + editorialSignalScore(context, now);
+}
+function relativePositionSignalBoost(candidate, candidates, playerContext, now) {
   const context = playerContextFor(candidate.id, playerContext);
-  const reasons = [];
-  if (need?.shortage) reasons.push(`${position} is ${need.shortage} starter short`);
-  else if (need) reasons.push(`${position} has only ${need.depth} rostered`);
-  else reasons.push(`adds ${position} depth`);
+  const rawScore = signalScore(context, now);
+  if (rawScore <= 0) return 0;
+  const bestAtPosition = Math.max(...candidates
+    .filter((item) => positionOf(item.player) === positionOf(candidate.player))
+    .map((item) => signalScore(playerContextFor(item.id, playerContext), now)));
+  return bestAtPosition > 0 ? Math.min(10, rawScore / bestAtPosition * 10) : 0;
+}
+function addReason(candidate, rosterFit, currentWeek, playoffWeek, playerContext, now) {
+  const player = candidate.player;
+  const context = playerContextFor(candidate.id, playerContext);
+  const reasons = [`overall priority ${candidate.score.toFixed(1)} (opportunity ${candidate.opportunityScore.toFixed(1)}, roster fit ${candidate.rosterFitScore.toFixed(1)})`, ...rosterFit.evidence];
   if (context?.projection !== null && context?.projection !== undefined) reasons.push(`imported projection ${context.projection}`);
   if (context?.valuation !== null && context?.valuation !== undefined) reasons.push(`imported value ${context.valuation}`);
   if (context?.trendAdds) reasons.push(`Sleeper 7-day adds ${context.trendAdds}`);
@@ -207,21 +244,30 @@ function addReason(candidate, needs, currentWeek, playoffWeek, playerContext, no
   if (playoffWeek && currentWeek && playoffWeek > currentWeek) reasons.push(`playoffs start Week ${playoffWeek}`);
   return reasons;
 }
-function waiverCandidates(rosters, players, needs, currentWeek, playoffWeek, playerContext, now) {
-  return freeAgents(rosters, players, needs).map((candidate) => {
+function waiverCandidates(roster, rosters, league, players, needs, currentWeek, playoffWeek, playerContext, now) {
+  const candidates = freeAgents(rosters, players, needs);
+  const baseCandidates = candidates.map((candidate) => {
     const context = playerContextFor(candidate.id, playerContext);
-    const position = positionOf(candidate.player);
-    const need = needs.find((item) => item.position === position);
     const bye = playerByeWeek(candidate.player);
-    const score = (need?.shortage ? 100 : need ? 40 : 10)
-      + (Number.isFinite(context?.projection) ? context.projection : 0)
-      + (Number.isFinite(context?.valuation) ? context.valuation / 10 : 0)
-      + (Number.isFinite(context?.trendAdds) ? Math.min(25, Math.log10(context.trendAdds + 1) * 12) : 0)
-      - (Number.isFinite(context?.trendDrops) ? Math.min(10, Math.log10(context.trendDrops + 1) * 5) : 0)
-      + editorialSignalScore(context, now)
-      - availabilityPenalty(candidate.player, context)
-      - (bye && currentWeek && bye === currentWeek ? 15 : 0);
-    return { ...candidate, score, reasons: addReason(candidate, needs, currentWeek, playoffWeek, playerContext, now) };
+    const rosterFit = rosterPositionFit(positionOf(candidate.player), roster, league, players, playerContext);
+    return { ...candidate, context, bye, rosterFit };
+  });
+  return baseCandidates.map((candidate) => {
+    const opportunityScore = signalScore(candidate.context, now)
+      + relativePositionSignalBoost(candidate, baseCandidates, playerContext, now)
+      - availabilityPenalty(candidate.player, candidate.context)
+      - (candidate.bye && currentWeek && candidate.bye === currentWeek ? 15 : 0);
+    const score = opportunityScore + candidate.rosterFit.score;
+    const rankedCandidate = {
+      ...candidate,
+      score,
+      opportunityScore,
+      rosterFitScore: candidate.rosterFit.score,
+    };
+    return {
+      ...rankedCandidate,
+      reasons: addReason(rankedCandidate, candidate.rosterFit, currentWeek, playoffWeek, playerContext, now),
+    };
   }).sort((a, b) => b.score - a.score || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id)));
 }
 function waiverDropCandidates(roster, league, players, playerContext) {
@@ -253,7 +299,7 @@ function waiverDropCandidates(roster, league, players, playerContext) {
 function buildWaiverReview({ roster, rosters, league, players, week, playerContext, now }) {
   const needs = rosterNeeds(roster, league, players);
   const playoffWeek = numericSetting(league?.settings, "playoff_week_start");
-  const adds = waiverCandidates(rosters, players, needs, week, playoffWeek, playerContext, now);
+  const adds = waiverCandidates(roster, rosters, league, players, needs, week, playoffWeek, playerContext, now);
   const drops = waiverDropCandidates(roster, league, players, playerContext);
   return {
     needs,
@@ -469,7 +515,7 @@ function renderLeague(model) {
   const needs = rosterNeeds(roster, league, state.players);
   const waiver = waiverSettings(league);
   const review = buildWaiverReview({ roster, rosters, league, players: state.players, week, playerContext: activeSnapshot()?.playerContext });
-  const candidates = waiverCandidates(rosters, state.players, needs, week, review.playoffWeek, activeSnapshot()?.playerContext).slice(0, 8);
+  const candidates = waiverCandidates(roster, rosters, league, state.players, needs, week, review.playoffWeek, activeSnapshot()?.playerContext).slice(0, 8);
   const ownMatchup = findMatchup(matchups, roster.roster_id);
   const opponent = matchupOpponent(matchups, ownMatchup);
   const opponentUser = users.find((user) => user.user_id === rosters.find((item) => item.roster_id === opponent?.roster_id)?.owner_id);
@@ -489,7 +535,7 @@ function renderLeague(model) {
       <section class="subcard"><h3>Your roster</h3><div class="roster-groups"><div class="roster-group"><h3>Starters</h3>${playerRows(groups.starters)}</div><div class="roster-group"><h3>Bench</h3>${playerRows(groups.bench)}</div><div class="roster-group"><h3>IR / reserve</h3>${playerRows(groups.ir)}</div></div></section>
     </div></div>
     <div class="league-grid"><div class="stack">
-      <section class="subcard waiver-review"><h3>Tuesday waiver review</h3><p class="notice">Prioritized public-data suggestions only. Each proposal pairs an unrostered player with an optional bench drop based on roster depth, reported bye timing, automated Sleeper trend data, and any cited advanced context. Review the player pool, waiver rules, and current news in Sleeper before acting. This app cannot submit a claim.</p><p class="notice">${state.deployedSnapshot ? `Automated evidence: ${safeArray(state.deployedSnapshot.sources).filter((source) => source.status !== "unavailable").map((source) => externalLink(source.url, source.name)).join(" · ")} · generated ${escapeText(formatTime(state.deployedSnapshot.generatedAt))}.${state.deployedSnapshot.dataQuality?.coverage === "partial" ? " Some automated sources were unavailable; see coverage above." : ""}` : "Automated injury, trend, and usage evidence is unavailable because the Tuesday snapshot could not load; no such claims are fabricated."}</p>${waiverReviewRows(review, model.leagueId)}</section>
+      <section class="subcard waiver-review"><h3>Tuesday waiver review</h3><p class="notice">Overall priority combines player opportunity evidence with marginal roster fit. Opportunity uses reported status, automated Sleeper trend data, fresh cited updates, and optional attributed values. Roster fit accounts for direct starter slots, positional surplus, and current Sleeper directory search-rank coverage; a directory search rank is not a fantasy ranking. This keeps redundant depth from dominating unless its evidence clearly justifies the add. Review the player pool, waiver rules, and current news in Sleeper before acting. This app cannot submit a claim.</p><p class="notice">${state.deployedSnapshot ? `Automated evidence: ${safeArray(state.deployedSnapshot.sources).filter((source) => source.status !== "unavailable").map((source) => externalLink(source.url, source.name)).join(" · ")} · generated ${escapeText(formatTime(state.deployedSnapshot.generatedAt))}.${state.deployedSnapshot.dataQuality?.coverage === "partial" ? " Some automated sources were unavailable; see coverage above." : ""}` : "Automated injury, trend, and usage evidence is unavailable because the Tuesday snapshot could not load; no such claims are fabricated."}</p>${waiverReviewRows(review, model.leagueId)}</section>
       <section class="subcard"><h3>Waiver / free-agent candidates</h3><p class="notice">Top score-sorted unrostered player-directory entries. Availability is calculated from this league’s Sleeper rosters; confirm waivers before acting.${activeSnapshot() ? ` Added context is attributed to ${escapeText(activeSnapshot().source.name)} at ${escapeText(formatTime(activeSnapshot().generatedAt))}.` : " No injury, news, or projection context is loaded."}</p><div class="candidate-list">${candidates.length ? candidates.map(({ id, player, reasons }, index) => `<div class="candidate"><span class="candidate-rank">${index + 1}</span><div><strong>${escapeText(playerName(player, id))}</strong><small>${escapeText([positionOf(player), player.team || "FA", player.status || "unknown status", contextNote(id)].filter(Boolean).join(" · "))}</small></div><span class="reason">${escapeText(reasons.join(" · "))}</span></div>`).join("") : '<p class="notice">No candidate list is available until the Sleeper player directory loads.</p>'}</div></section>
       <section class="subcard"><h3>Recent league transactions</h3><div class="transaction-list">${transactions.length ? transactions.map((item) => `<div class="player-chip"><div><strong>${escapeText(item.type)}</strong><small>${item.adds.length ? `Add: ${item.adds.map(escapeText).join(", ")}` : ""}${item.adds.length && item.drops.length ? " · " : ""}${item.drops.length ? `Drop: ${item.drops.map(escapeText).join(", ")}` : ""}</small></div><small>${escapeText(item.status)}</small></div>`).join("") : '<p class="notice">No transactions were returned for the current or prior matchup week.</p>'}</div></section>
     </div><div class="stack">
