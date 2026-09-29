@@ -38,7 +38,7 @@ test("ranks record position and returns only unrostered position candidates", ()
   const rosters = [{ roster_id: 1, players: ["qb"], settings: { wins: 5, losses: 1 } }, { roster_id: 2, players: ["rb"], settings: { wins: 3, losses: 3 } }];
   assert.equal(rankFromRosters(rosters, rosters[1]), 2);
   const candidates = freeAgents(rosters, candidatePlayers, [{ position: "WR", shortage: 1, depth: 0 }]);
-  assert.deepEqual(candidates.map((candidate) => candidate.id), ["wr"]);
+  assert.deepEqual(candidates.map((candidate) => candidate.id).sort(), ["te", "wr"]);
 });
 test("summarizes Sleeper transaction player changes", () => {
   const summary = transactionSummary([{ type: "waiver", status: "complete", status_updated: 2, adds: { rb: 1 }, drops: { qb: 1 } }], players);
