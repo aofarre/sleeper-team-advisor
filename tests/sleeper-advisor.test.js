@@ -97,9 +97,44 @@ test("builds a review-only waiver add/drop list from Sleeper roster rules and at
   assert.match(review.recommendations[0].add.reasons.join(" "), /Sleeper 7-day adds 41/);
   assert.match(review.recommendations[0].add.reasons.join(" "), /playoffs start Week 15/);
 });
+test("scores every eligible candidate before ranking, so a high-signal Braelon Allen is not lost to an alphabetical cap", () => {
+  const fixturePlayers = {
+    qb: { first_name: "Quarter", last_name: "Back", position: "QB", team: "AAA" },
+    rb1: { first_name: "Roster", last_name: "Runner", position: "RB", team: "AAA" },
+    rb2: { first_name: "Roster", last_name: "Depth", position: "RB", team: "BBB" },
+    wr1: { first_name: "Roster", last_name: "Wide", position: "WR", team: "CCC" },
+    wr2: { first_name: "Roster", last_name: "Wide Two", position: "WR", team: "DDD" },
+    te: { first_name: "Roster", last_name: "Tight", position: "TE", team: "EEE" },
+    braelon: { first_name: "Braelon", last_name: "Allen", position: "RB", team: "NYJ", active: true },
+  };
+  for (let index = 1; index <= 10; index += 1) fixturePlayers[`alpha${index}`] = { first_name: "Alpha", last_name: `Runner ${index}`, position: "RB", team: "AAA", active: true };
+  const review = buildWaiverReview({
+    roster: { players: ["qb", "rb1", "rb2", "wr1", "wr2", "te"], starters: ["qb", "rb1", "wr1", "te"] },
+    rosters: [{ players: ["qb", "rb1", "rb2", "wr1", "wr2", "te"] }],
+    league: { roster_positions: ["QB", "RB", "RB", "WR", "WR", "TE"], settings: {} },
+    players: fixturePlayers,
+    week: 4,
+    now: Date.parse("2026-09-29T18:00:00.000Z"),
+    playerContext: {
+      braelon: {
+        trendAdds: 50,
+        trendDrops: 0,
+        editorialMentions: [{ source: "RotoWire public NFL RSS", title: "Braelon Allen: Takes larger role", url: "https://example.test/braelon", publishedAt: "2026-09-29T17:00:00.000Z" }],
+      },
+    },
+  });
+  assert.equal(review.adds[0].id, "braelon");
+  assert.ok(review.adds.some((candidate) => candidate.id === "braelon"));
+  assert.ok(review.adds[0].score > review.adds[1].score);
+  assert.match(review.adds[0].reasons.join(" "), /Sleeper 7-day adds 50/);
+  assert.match(review.adds[0].reasons.join(" "), /attributed player update 1h ago/);
+});
 test("normalizes automated Sleeper sources and preserves partial source failures", async () => {
-  const { normalizeTrending, buildAutomatedSnapshot } = await import("../scripts/refresh-sleeper-snapshot.mjs");
+  const { normalizeTrending, parseRssItems, matchEditorialItems, buildAutomatedSnapshot } = await import("../scripts/refresh-sleeper-snapshot.mjs");
   assert.deepEqual(normalizeTrending([{ player_id: "wr", count: 42 }, { player_id: "", count: 2 }, { player_id: "bad", count: "unknown" }]), { wr: 42 });
+  const rssItems = parseRssItems("<rss><channel><item><title>Braelon Allen: Takes larger role</title><link>https://example.test/braelon</link><pubDate>Tue, 29 Sep 2026 17:00:00 GMT</pubDate></item></channel></rss>");
+  assert.deepEqual(rssItems, [{ title: "Braelon Allen: Takes larger role", url: "https://example.test/braelon", publishedAt: "2026-09-29T17:00:00.000Z" }]);
+  assert.equal(matchEditorialItems({ braelon: { first_name: "Braelon", last_name: "Allen" } }, rssItems).braelon[0].title, "Braelon Allen: Takes larger role");
   const generatedAt = "2026-09-29T18:00:00.000Z";
   const snapshot = buildAutomatedSnapshot({
     generatedAt,
@@ -107,15 +142,17 @@ test("normalizes automated Sleeper sources and preserves partial source failures
     nflState: { season: "2026", week: 4, season_type: "regular" },
     trendingAdds: [{ player_id: "wr", count: 42 }],
     trendingDrops: [],
+    editorialItems: [],
     results: {
       directory: { ok: true },
       state: { ok: true },
       trendingAdds: { ok: true },
       trendingDrops: { ok: false, error: "503 Service Unavailable" },
+      rotoWireRss: { ok: false, error: "RSS unavailable" },
     },
   });
   assert.equal(snapshot.dataQuality.coverage, "partial");
-  assert.deepEqual(snapshot.dataQuality.unavailableSources, ["sleeper-trending-drops"]);
+  assert.deepEqual(snapshot.dataQuality.unavailableSources, ["sleeper-trending-drops", "rotowire-nfl-rss"]);
   assert.equal(snapshot.playerContext.wr.trendAdds, 42);
   assert.equal(snapshot.playerContext.wr.injury, "Questionable");
   assert.equal(snapshot.sources.find((source) => source.id === "sleeper-trending-drops").status, "unavailable");

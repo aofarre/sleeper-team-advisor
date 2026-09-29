@@ -124,16 +124,9 @@ function availabilityPenalty(player, context) {
 }
 function freeAgents(rosters, players, needs) {
   const rostered = new Set(safeArray(rosters).flatMap((roster) => safeArray(roster.players)));
-  const neededPositions = needs.filter((need) => need.shortage > 0).map((need) => need.position);
-  const fallbacks = ["RB", "WR", "TE", "QB"];
-  const preferred = neededPositions.length ? neededPositions : fallbacks;
   return Object.entries(players).map(([id, player]) => ({ id, player })).filter(({ id, player }) =>
-    !rostered.has(id) && isEligibleWaiverCandidate(player) && preferred.includes(positionOf(player)) && playerName(player, id) !== "Unknown player"
-  ).sort((a, b) => {
-    const aNeed = preferred.indexOf(positionOf(a.player));
-    const bNeed = preferred.indexOf(positionOf(b.player));
-    return aNeed - bNeed || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id));
-  }).slice(0, 8);
+    !rostered.has(id) && isEligibleWaiverCandidate(player) && ["RB", "WR", "TE", "QB"].includes(positionOf(player)) && playerName(player, id) !== "Unknown player"
+  );
 }
 function numericSetting(settings, key) {
   const value = Number(settings?.[key]);
@@ -168,13 +161,30 @@ function playerByeWeek(player) {
 function playerContextFor(playerId, playerContext) {
   return playerContext?.[playerId] || null;
 }
+function editorialSignalScore(context, now = Date.now()) {
+  const mentions = safeArray(context?.editorialMentions).filter((mention) => mention?.publishedAt && !Number.isNaN(Date.parse(mention.publishedAt)));
+  if (!mentions.length) return 0;
+  const latest = Math.max(...mentions.map((mention) => Date.parse(mention.publishedAt)));
+  const ageHours = Math.max(0, (now - latest) / 3600000);
+  if (ageHours <= 48) return 25;
+  if (ageHours <= 168) return 15;
+  if (ageHours <= 336) return 5;
+  return 0;
+}
+function editorialReason(context, now = Date.now()) {
+  const mentions = safeArray(context?.editorialMentions).filter((mention) => mention?.publishedAt && !Number.isNaN(Date.parse(mention.publishedAt)));
+  if (!mentions.length) return "";
+  const latest = Math.max(...mentions.map((mention) => Date.parse(mention.publishedAt)));
+  const ageHours = Math.max(0, Math.round((now - latest) / 3600000));
+  return `attributed player update ${ageHours}h ago`;
+}
 function rosterTargetCount(league, position) {
   const starters = safeArray(league?.roster_positions);
   const directSlots = starters.filter((slot) => slot === position).length;
   if (directSlots) return directSlots;
   return position === "QB" ? 1 : position === "TE" ? 1 : 0;
 }
-function addReason(candidate, needs, currentWeek, playoffWeek, playerContext) {
+function addReason(candidate, needs, currentWeek, playoffWeek, playerContext, now) {
   const player = candidate.player;
   const position = positionOf(player);
   const need = needs.find((item) => item.position === position);
@@ -189,13 +199,15 @@ function addReason(candidate, needs, currentWeek, playoffWeek, playerContext) {
   if (context?.trendDrops) reasons.push(`Sleeper 7-day drops ${context.trendDrops}`);
   if (context?.injury) reasons.push(`injury context: ${context.injury}`);
   if (context?.practiceParticipation) reasons.push(`practice: ${context.practiceParticipation}`);
+  const editorial = editorialReason(context, now);
+  if (editorial) reasons.push(editorial);
   else if (context?.news) reasons.push("cited news context available");
   const bye = playerByeWeek(player);
   if (bye && currentWeek && bye >= currentWeek && bye <= currentWeek + 3) reasons.push(`bye Week ${bye}`);
   if (playoffWeek && currentWeek && playoffWeek > currentWeek) reasons.push(`playoffs start Week ${playoffWeek}`);
   return reasons;
 }
-function waiverCandidates(rosters, players, needs, currentWeek, playoffWeek, playerContext) {
+function waiverCandidates(rosters, players, needs, currentWeek, playoffWeek, playerContext, now) {
   return freeAgents(rosters, players, needs).map((candidate) => {
     const context = playerContextFor(candidate.id, playerContext);
     const position = positionOf(candidate.player);
@@ -206,9 +218,10 @@ function waiverCandidates(rosters, players, needs, currentWeek, playoffWeek, pla
       + (Number.isFinite(context?.valuation) ? context.valuation / 10 : 0)
       + (Number.isFinite(context?.trendAdds) ? Math.min(25, Math.log10(context.trendAdds + 1) * 12) : 0)
       - (Number.isFinite(context?.trendDrops) ? Math.min(10, Math.log10(context.trendDrops + 1) * 5) : 0)
+      + editorialSignalScore(context, now)
       - availabilityPenalty(candidate.player, context)
       - (bye && currentWeek && bye === currentWeek ? 15 : 0);
-    return { ...candidate, score, reasons: addReason(candidate, needs, currentWeek, playoffWeek, playerContext) };
+    return { ...candidate, score, reasons: addReason(candidate, needs, currentWeek, playoffWeek, playerContext, now) };
   }).sort((a, b) => b.score - a.score || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id)));
 }
 function waiverDropCandidates(roster, league, players, playerContext) {
@@ -237,10 +250,10 @@ function waiverDropCandidates(roster, league, players, playerContext) {
     };
   }).sort((a, b) => b.score - a.score || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id)));
 }
-function buildWaiverReview({ roster, rosters, league, players, week, playerContext }) {
+function buildWaiverReview({ roster, rosters, league, players, week, playerContext, now }) {
   const needs = rosterNeeds(roster, league, players);
   const playoffWeek = numericSetting(league?.settings, "playoff_week_start");
-  const adds = waiverCandidates(rosters, players, needs, week, playoffWeek, playerContext);
+  const adds = waiverCandidates(rosters, players, needs, week, playoffWeek, playerContext, now);
   const drops = waiverDropCandidates(roster, league, players, playerContext);
   return {
     needs,
@@ -290,6 +303,12 @@ function parseSnapshot(snapshot) {
       trendAdds: context.trendAdds !== null && context.trendAdds !== undefined && context.trendAdds !== "" && Number.isFinite(Number(context.trendAdds)) && Number(context.trendAdds) >= 0 ? Number(context.trendAdds) : null,
       trendDrops: context.trendDrops !== null && context.trendDrops !== undefined && context.trendDrops !== "" && Number.isFinite(Number(context.trendDrops)) && Number(context.trendDrops) >= 0 ? Number(context.trendDrops) : null,
       practiceParticipation: String(context.practiceParticipation || "").slice(0, 120),
+      editorialMentions: safeArray(context.editorialMentions).filter(isObject).slice(0, 3).map((mention) => ({
+        source: String(mention.source || "").slice(0, 120),
+        title: String(mention.title || "").slice(0, 240),
+        url: String(mention.url || "").slice(0, 500),
+        publishedAt: mention.publishedAt && !Number.isNaN(Date.parse(mention.publishedAt)) ? mention.publishedAt : null,
+      })).filter((mention) => mention.title && mention.url && mention.publishedAt),
       updatedAt: context.updatedAt && !Number.isNaN(Date.parse(context.updatedAt)) ? context.updatedAt : snapshot.generatedAt,
       sourceUrl: String(context.sourceUrl || snapshot.source.url || "").slice(0, 500),
     };
@@ -322,7 +341,7 @@ function activeSnapshot() {
   const playerContext = { ...automated.playerContext };
   for (const [playerId, manualContext] of Object.entries(manual.playerContext)) {
     const automatedContext = playerContext[playerId] || {};
-    const definedManualContext = Object.fromEntries(Object.entries(manualContext).filter(([, value]) => value !== null && value !== ""));
+    const definedManualContext = Object.fromEntries(Object.entries(manualContext).filter(([, value]) => value !== null && value !== "" && (!Array.isArray(value) || value.length)));
     playerContext[playerId] = { ...automatedContext, ...definedManualContext };
   }
   return {
@@ -435,6 +454,7 @@ function waiverReviewRows(review, leagueId) {
       <p>${escapeText(add.reasons.join(" · "))}</p>
       <p><strong>${drop ? `Consider dropping ${escapeText(playerName(drop.player, drop.id))}` : "No suggested drop"}</strong>${drop ? ` — ${escapeText(drop.reasons.join(" · "))}` : " — preserve flexibility or choose a player manually in Sleeper."}</p>
       ${addContext?.news || dropContext?.news ? `<p class="notice">${addContext?.news ? `Add context: ${escapeText(addContext.news)}` : ""}${addContext?.news && dropContext?.news ? " · " : ""}${dropContext?.news ? `Drop context: ${escapeText(dropContext.news)}` : ""}</p>` : ""}
+      ${safeArray(addContext?.editorialMentions).length ? `<p class="notice">Editorial signal: ${safeArray(addContext.editorialMentions).map((mention) => externalLink(mention.url, `${mention.source}: ${mention.title}`)).join(" · ")}</p>` : ""}
       ${addContext?.sourceUrl || dropContext?.sourceUrl ? `<p class="notice">Context citation: ${addContext?.sourceUrl ? externalLink(addContext.sourceUrl, `Add source for ${playerName(add.player, add.id)}`) : ""}${addContext?.sourceUrl && dropContext?.sourceUrl ? " · " : ""}${dropContext?.sourceUrl ? externalLink(dropContext.sourceUrl, `Drop source for ${playerName(drop.player, drop.id)}`) : ""}</p>` : ""}
       <label class="review-check"><input type="checkbox" data-waiver-review="${escapeText(reviewKey)}"${checked} /> I reviewed this proposal in Sleeper; no transaction has been sent.</label>
     </article>`;
@@ -447,9 +467,9 @@ function renderLeague(model) {
   if (!roster) return `<article class="card league-card"><div class="league-top"><div><p class="eyebrow">SLEEPER LEAGUE</p><h2>${escapeText(name)}</h2><p class="data-source">League ID ${escapeText(model.leagueId)} · refreshed ${escapeText(formatTime(model.refreshedAt))}</p></div><span class="tag error">Roster not found</span></div><p class="notice">The saved username does not own a roster in this league. Confirm the Sleeper username or select a league where that account participates.</p></article>`;
   const groups = rosterGroups(roster, state.players);
   const needs = rosterNeeds(roster, league, state.players);
-  const candidates = freeAgents(rosters, state.players, needs);
   const waiver = waiverSettings(league);
   const review = buildWaiverReview({ roster, rosters, league, players: state.players, week, playerContext: activeSnapshot()?.playerContext });
+  const candidates = waiverCandidates(rosters, state.players, needs, week, review.playoffWeek, activeSnapshot()?.playerContext).slice(0, 8);
   const ownMatchup = findMatchup(matchups, roster.roster_id);
   const opponent = matchupOpponent(matchups, ownMatchup);
   const opponentUser = users.find((user) => user.user_id === rosters.find((item) => item.roster_id === opponent?.roster_id)?.owner_id);
@@ -470,7 +490,7 @@ function renderLeague(model) {
     </div></div>
     <div class="league-grid"><div class="stack">
       <section class="subcard waiver-review"><h3>Tuesday waiver review</h3><p class="notice">Prioritized public-data suggestions only. Each proposal pairs an unrostered player with an optional bench drop based on roster depth, reported bye timing, automated Sleeper trend data, and any cited advanced context. Review the player pool, waiver rules, and current news in Sleeper before acting. This app cannot submit a claim.</p><p class="notice">${state.deployedSnapshot ? `Automated evidence: ${safeArray(state.deployedSnapshot.sources).filter((source) => source.status !== "unavailable").map((source) => externalLink(source.url, source.name)).join(" · ")} · generated ${escapeText(formatTime(state.deployedSnapshot.generatedAt))}.${state.deployedSnapshot.dataQuality?.coverage === "partial" ? " Some automated sources were unavailable; see coverage above." : ""}` : "Automated injury, trend, and usage evidence is unavailable because the Tuesday snapshot could not load; no such claims are fabricated."}</p>${waiverReviewRows(review, model.leagueId)}</section>
-      <section class="subcard"><h3>Waiver / free-agent candidates</h3><p class="notice">Unrostered player-directory entries prioritized by basic roster need. Availability is calculated from this league’s Sleeper rosters; confirm waivers before acting.${activeSnapshot() ? ` Added context is attributed to ${escapeText(activeSnapshot().source.name)} at ${escapeText(formatTime(activeSnapshot().generatedAt))}.` : " No injury, news, or projection context is loaded."}</p><div class="candidate-list">${candidates.length ? candidates.map(({ id, player }, index) => `<div class="candidate"><span class="candidate-rank">${index + 1}</span><div><strong>${escapeText(playerName(player, id))}</strong><small>${escapeText([positionOf(player), player.team || "FA", player.status || "unknown status", contextNote(id)].filter(Boolean).join(" · "))}</small></div><span class="reason">${needs[0] ? `Fits ${escapeText(needs[0].position)} need` : "Depth option"}</span></div>`).join("") : '<p class="notice">No candidate list is available until the Sleeper player directory loads.</p>'}</div></section>
+      <section class="subcard"><h3>Waiver / free-agent candidates</h3><p class="notice">Top score-sorted unrostered player-directory entries. Availability is calculated from this league’s Sleeper rosters; confirm waivers before acting.${activeSnapshot() ? ` Added context is attributed to ${escapeText(activeSnapshot().source.name)} at ${escapeText(formatTime(activeSnapshot().generatedAt))}.` : " No injury, news, or projection context is loaded."}</p><div class="candidate-list">${candidates.length ? candidates.map(({ id, player, reasons }, index) => `<div class="candidate"><span class="candidate-rank">${index + 1}</span><div><strong>${escapeText(playerName(player, id))}</strong><small>${escapeText([positionOf(player), player.team || "FA", player.status || "unknown status", contextNote(id)].filter(Boolean).join(" · "))}</small></div><span class="reason">${escapeText(reasons.join(" · "))}</span></div>`).join("") : '<p class="notice">No candidate list is available until the Sleeper player directory loads.</p>'}</div></section>
       <section class="subcard"><h3>Recent league transactions</h3><div class="transaction-list">${transactions.length ? transactions.map((item) => `<div class="player-chip"><div><strong>${escapeText(item.type)}</strong><small>${item.adds.length ? `Add: ${item.adds.map(escapeText).join(", ")}` : ""}${item.adds.length && item.drops.length ? " · " : ""}${item.drops.length ? `Drop: ${item.drops.map(escapeText).join(", ")}` : ""}</small></div><small>${escapeText(item.status)}</small></div>`).join("") : '<p class="notice">No transactions were returned for the current or prior matchup week.</p>'}</div></section>
     </div><div class="stack">
       <section class="subcard"><h3>Start / sit workspace</h3><p class="notice">Manual only: enter your own expert projections and risk notes. They remain in this browser and are not sent to Sleeper.</p>${decisionRows(groups, model.leagueId)}</section>

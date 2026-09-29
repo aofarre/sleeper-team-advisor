@@ -29,18 +29,25 @@ const sourceDefinitions = {
     path: "players/nfl/trending/drop?lookback_hours=168&limit=100",
     coverage: "Sleeper-wide player drops in the prior seven days; not league-specific availability or a projection.",
   },
+  rotoWireRss: {
+    id: "rotowire-nfl-rss",
+    name: "RotoWire public NFL RSS",
+    url: "https://www.rotowire.com/rss/news.php?sport=NFL",
+    format: "rss",
+    coverage: "Published player-news titles and timestamps from RotoWire's public NFL RSS feed; a linked editorial update, not a projection or waiver ranking.",
+  },
 };
 
-function sourceUrl(path) {
-  return `${apiRoot}/${path}`;
+function sourceUrl(definition) {
+  return definition.url || `${apiRoot}/${definition.path}`;
 }
 
-async function sleeperFetch(path) {
-  const response = await fetch(sourceUrl(path), {
-    headers: { Accept: "application/json", "User-Agent": "Roster-Signal-Tuesday-Refresh/2.0" },
+async function sourceFetch(definition) {
+  const response = await fetch(sourceUrl(definition), {
+    headers: { Accept: "application/json, application/rss+xml, application/xml;q=0.9", "User-Agent": "Roster-Signal-Tuesday-Refresh/2.0" },
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-  return response.json();
+  return definition.format === "rss" ? response.text() : response.json();
 }
 
 export function normalizeTrending(entries) {
@@ -55,16 +62,61 @@ function sourceRecord(definition, fetchedAt, result) {
   return {
     id: definition.id,
     name: definition.name,
-    url: sourceUrl(definition.path),
+    url: sourceUrl(definition),
     fetchedAt,
-    status: result.ok ? "available" : "unavailable",
-    coverage: result.ok ? definition.coverage : `${definition.coverage} Refresh failed: ${result.error}`,
+    status: result?.ok ? "available" : "unavailable",
+    coverage: result?.ok ? definition.coverage : `${definition.coverage} Refresh failed: ${result?.error || "not requested"}`,
   };
 }
 
-export function buildAutomatedSnapshot({ generatedAt, players, nflState, trendingAdds, trendingDrops, results }) {
+function decodeXml(value) {
+  return String(value || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function tagValue(item, tag) {
+  const match = item.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match ? decodeXml(match[1]).trim() : "";
+}
+
+export function parseRssItems(xml) {
+  return [...String(xml || "").matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map((match) => {
+    const item = match[1];
+    const title = tagValue(item, "title");
+    const url = tagValue(item, "link");
+    const publishedAt = tagValue(item, "pubDate");
+    return title && url && publishedAt && !Number.isNaN(Date.parse(publishedAt)) ? { title, url, publishedAt: new Date(publishedAt).toISOString() } : null;
+  }).filter(Boolean);
+}
+
+function normalizeName(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function matchEditorialItems(players, items) {
+  const idsByName = new Map(Object.entries(players || {}).map(([id, player]) => [
+    normalizeName(`${player.first_name || ""} ${player.last_name || ""}`),
+    id,
+  ]));
+  return (Array.isArray(items) ? items : []).reduce((matches, item) => {
+    const playerName = item.title.split(":")[0];
+    const playerId = idsByName.get(normalizeName(playerName));
+    if (!playerId) return matches;
+    if (!matches[playerId]) matches[playerId] = [];
+    matches[playerId].push({ source: "RotoWire public NFL RSS", title: item.title.slice(0, 240), url: item.url, publishedAt: item.publishedAt });
+    return matches;
+  }, {});
+}
+
+export function buildAutomatedSnapshot({ generatedAt, players, nflState, trendingAdds, trendingDrops, editorialItems, results }) {
   const adds = normalizeTrending(trendingAdds);
   const drops = normalizeTrending(trendingDrops);
+  const editorialMatches = matchEditorialItems(players, editorialItems);
   const playerContext = Object.fromEntries(
     Object.entries(players || {})
       .filter(([, player]) => player?.active !== false && player?.team && ["QB", "RB", "WR", "TE", "K", "DEF"].includes(player?.position))
@@ -77,8 +129,9 @@ export function buildAutomatedSnapshot({ generatedAt, players, nflState, trendin
         practiceParticipation: player.practice_participation || "",
         trendAdds: adds[id] ?? null,
         trendDrops: drops[id] ?? null,
+        editorialMentions: editorialMatches[id] || [],
         updatedAt: generatedAt,
-        sourceUrl: sourceUrl(sourceDefinitions.directory.path),
+        sourceUrl: sourceUrl(sourceDefinitions.directory),
       }]),
   );
   const sources = Object.entries(sourceDefinitions).map(([key, definition]) => sourceRecord(definition, generatedAt, results[key]));
@@ -111,7 +164,7 @@ export function buildAutomatedSnapshot({ generatedAt, players, nflState, trendin
 
 async function loadSource(key, definition) {
   try {
-    return { key, ok: true, value: await sleeperFetch(definition.path) };
+    return { key, ok: true, value: await sourceFetch(definition) };
   } catch (error) {
     return { key, ok: false, error: error.message };
   }
@@ -129,6 +182,7 @@ export async function refreshSnapshot() {
     nflState: values.state,
     trendingAdds: values.trendingAdds,
     trendingDrops: values.trendingDrops,
+    editorialItems: results.rotoWireRss.ok ? parseRssItems(values.rotoWireRss) : [],
     results,
   });
   await mkdir(outputDirectory, { recursive: true });
