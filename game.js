@@ -104,13 +104,31 @@ function matchupOpponent(matchups, ownMatchup) {
   if (!ownMatchup?.matchup_id) return null;
   return safeArray(matchups).find((matchup) => matchup.matchup_id === ownMatchup.matchup_id && matchup.roster_id !== ownMatchup.roster_id) || null;
 }
+function candidateStatus(player) {
+  return `${player?.status || ""} ${player?.injury_status || ""}`.toLowerCase();
+}
+function isEligibleWaiverCandidate(player) {
+  const status = candidateStatus(player);
+  return player?.active !== false
+    && Boolean(player?.team)
+    && !status.includes("injured reserve")
+    && !status.includes("retired")
+    && !status.includes("inactive");
+}
+function availabilityPenalty(player, context) {
+  const status = `${candidateStatus(player)} ${context?.injury || ""} ${context?.practiceParticipation || ""}`.toLowerCase();
+  if (status.includes("out")) return 30;
+  if (status.includes("doubtful")) return 20;
+  if (status.includes("limited")) return 5;
+  return 0;
+}
 function freeAgents(rosters, players, needs) {
   const rostered = new Set(safeArray(rosters).flatMap((roster) => safeArray(roster.players)));
   const neededPositions = needs.filter((need) => need.shortage > 0).map((need) => need.position);
   const fallbacks = ["RB", "WR", "TE", "QB"];
   const preferred = neededPositions.length ? neededPositions : fallbacks;
   return Object.entries(players).map(([id, player]) => ({ id, player })).filter(({ id, player }) =>
-    !rostered.has(id) && player?.active !== false && preferred.includes(positionOf(player)) && playerName(player, id) !== "Unknown player"
+    !rostered.has(id) && isEligibleWaiverCandidate(player) && preferred.includes(positionOf(player)) && playerName(player, id) !== "Unknown player"
   ).sort((a, b) => {
     const aNeed = preferred.indexOf(positionOf(a.player));
     const bNeed = preferred.indexOf(positionOf(b.player));
@@ -188,6 +206,7 @@ function waiverCandidates(rosters, players, needs, currentWeek, playoffWeek, pla
       + (Number.isFinite(context?.valuation) ? context.valuation / 10 : 0)
       + (Number.isFinite(context?.trendAdds) ? Math.min(25, Math.log10(context.trendAdds + 1) * 12) : 0)
       - (Number.isFinite(context?.trendDrops) ? Math.min(10, Math.log10(context.trendDrops + 1) * 5) : 0)
+      - availabilityPenalty(candidate.player, context)
       - (bye && currentWeek && bye === currentWeek ? 15 : 0);
     return { ...candidate, score, reasons: addReason(candidate, needs, currentWeek, playoffWeek, playerContext) };
   }).sort((a, b) => b.score - a.score || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id)));

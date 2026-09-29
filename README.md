@@ -59,7 +59,7 @@ The source name and URL are displayed alongside the result. Import only data tha
 
 ### Tuesday waiver-review inputs and limits
 
-The waiver review uses public Sleeper league settings, roster positions, your roster, league rosters, player-directory fields, current NFL week, current/prior-week league transactions, and the automated Tuesday trending snapshot. It calculates a player as available only when that player is absent from the loaded league rosters. It incorporates a player bye week and the league playoff start week only when those fields are reported by Sleeper.
+The waiver review uses public Sleeper league settings, roster positions, your roster, league rosters, player-directory fields, current NFL week, current/prior-week league transactions, and the automated Tuesday trending snapshot. It calculates a player as available only when that player is absent from the loaded league rosters. It restricts automatic targets to current team-affiliated, non-reserve players and incorporates a player bye week and the league playoff start week only when those fields are reported by Sleeper.
 
 Recommendations are prioritization aids, not projections or guaranteed claims. A suggestion’s multi-week explanation identifies basic positional depth, near-term reported bye timing, playoff timing, reported Sleeper injury/practice fields, and modest seven-day Sleeper add/drop interest. It treats rest-of-season upside, projected usage, and independent editorial news as unknown unless they occur in an advanced, source-attributed snapshot. The app never scrapes third-party news sites. To add external waiver news responsibly, use a provider/API/export you are permitted to use, import the JSON snapshot, and include a source URL for each context item. The review links that source and shows automated coverage or unavailable feeds.
 
@@ -68,7 +68,7 @@ Recommendations are prioritization aids, not projections or guaranteed claims. A
 `.github/workflows/deploy-pages.yml` runs on pushes to `main`, manual dispatches, and at **Tuesday 14:00 UTC**. It runs tests, then `scripts/refresh-sleeper-snapshot.mjs`, which calls only documented public Sleeper endpoints:
 
 - `GET https://api.sleeper.app/v1/state/nfl`
-- `GET https://api.sleeper.app/v1/players/nfl`
+- `GET https://api.sleeper.app/v1/players/nfl?active=true`
 - `GET https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=168&limit=100`
 - `GET https://api.sleeper.app/v1/players/nfl/trending/drop?lookback_hours=168&limit=100`
 

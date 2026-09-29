@@ -30,9 +30,14 @@ test("reports position shortages from roster and league slots including kicker a
   assert.equal(needs.find((need) => need.position === "DEF").shortage, 1);
 });
 test("ranks record position and returns only unrostered position candidates", () => {
+  const candidatePlayers = {
+    ...players,
+    retired: { first_name: "Old", last_name: "Player", position: "WR", active: true, status: "Retired" },
+    reserve: { first_name: "Reserve", last_name: "Player", position: "WR", team: "DDD", active: true, status: "Injured Reserve" },
+  };
   const rosters = [{ roster_id: 1, players: ["qb"], settings: { wins: 5, losses: 1 } }, { roster_id: 2, players: ["rb"], settings: { wins: 3, losses: 3 } }];
   assert.equal(rankFromRosters(rosters, rosters[1]), 2);
-  const candidates = freeAgents(rosters, players, [{ position: "WR", shortage: 1, depth: 0 }]);
+  const candidates = freeAgents(rosters, candidatePlayers, [{ position: "WR", shortage: 1, depth: 0 }]);
   assert.deepEqual(candidates.map((candidate) => candidate.id), ["wr"]);
 });
 test("summarizes Sleeper transaction player changes", () => {

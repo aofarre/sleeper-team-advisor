@@ -8,7 +8,7 @@ const sourceDefinitions = {
   directory: {
     id: "sleeper-player-directory",
     name: "Sleeper public player directory",
-    path: "players/nfl",
+    path: "players/nfl?active=true",
     coverage: "Player identity, position, team, bye week, reported status, injury fields, and practice participation.",
   },
   state: {
@@ -67,7 +67,7 @@ export function buildAutomatedSnapshot({ generatedAt, players, nflState, trendin
   const drops = normalizeTrending(trendingDrops);
   const playerContext = Object.fromEntries(
     Object.entries(players || {})
-      .filter(([, player]) => player?.active !== false && ["QB", "RB", "WR", "TE", "K", "DEF"].includes(player?.position))
+      .filter(([, player]) => player?.active !== false && player?.team && ["QB", "RB", "WR", "TE", "K", "DEF"].includes(player?.position))
       .map(([id, player]) => [id, {
         playerName: `${player.first_name || ""} ${player.last_name || ""}`.trim() || player.full_name || id,
         position: player.position,
