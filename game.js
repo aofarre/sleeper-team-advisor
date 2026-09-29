@@ -167,7 +167,10 @@ function addReason(candidate, needs, currentWeek, playoffWeek, playerContext) {
   else reasons.push(`adds ${position} depth`);
   if (context?.projection !== null && context?.projection !== undefined) reasons.push(`imported projection ${context.projection}`);
   if (context?.valuation !== null && context?.valuation !== undefined) reasons.push(`imported value ${context.valuation}`);
+  if (context?.trendAdds) reasons.push(`Sleeper 7-day adds ${context.trendAdds}`);
+  if (context?.trendDrops) reasons.push(`Sleeper 7-day drops ${context.trendDrops}`);
   if (context?.injury) reasons.push(`injury context: ${context.injury}`);
+  if (context?.practiceParticipation) reasons.push(`practice: ${context.practiceParticipation}`);
   else if (context?.news) reasons.push("cited news context available");
   const bye = playerByeWeek(player);
   if (bye && currentWeek && bye >= currentWeek && bye <= currentWeek + 3) reasons.push(`bye Week ${bye}`);
@@ -183,6 +186,8 @@ function waiverCandidates(rosters, players, needs, currentWeek, playoffWeek, pla
     const score = (need?.shortage ? 100 : need ? 40 : 10)
       + (Number.isFinite(context?.projection) ? context.projection : 0)
       + (Number.isFinite(context?.valuation) ? context.valuation / 10 : 0)
+      + (Number.isFinite(context?.trendAdds) ? Math.min(25, Math.log10(context.trendAdds + 1) * 12) : 0)
+      - (Number.isFinite(context?.trendDrops) ? Math.min(10, Math.log10(context.trendDrops + 1) * 5) : 0)
       - (bye && currentWeek && bye === currentWeek ? 15 : 0);
     return { ...candidate, score, reasons: addReason(candidate, needs, currentWeek, playoffWeek, playerContext) };
   }).sort((a, b) => b.score - a.score || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id)));
@@ -201,7 +206,16 @@ function waiverDropCandidates(roster, league, players, playerContext) {
     if (context?.injury) reasons.push(`injury context: ${context.injury}`);
     if (context?.projection !== null && context?.projection !== undefined) reasons.push(`imported projection ${context.projection}`);
     else reasons.push("no imported projection");
-    return { id, player, position, score: surplus * 50 - (Number.isFinite(context?.valuation) ? context.valuation / 10 : 0), reasons };
+    return {
+      id,
+      player,
+      position,
+      score: surplus * 50
+        - (Number.isFinite(context?.valuation) ? context.valuation / 10 : 0)
+        + (Number.isFinite(context?.trendDrops) ? Math.min(12, Math.log10(context.trendDrops + 1) * 6) : 0)
+        - (Number.isFinite(context?.trendAdds) ? Math.min(12, Math.log10(context.trendAdds + 1) * 6) : 0),
+      reasons,
+    };
   }).sort((a, b) => b.score - a.score || playerName(a.player, a.id).localeCompare(playerName(b.player, b.id)));
 }
 function buildWaiverReview({ roster, rosters, league, players, week, playerContext }) {
@@ -254,19 +268,50 @@ function parseSnapshot(snapshot) {
       valuation: context.valuation === undefined || context.valuation === "" ? null : Number(context.valuation),
       injury: String(context.injury || "").slice(0, 500),
       news: String(context.news || "").slice(0, 1000),
+      trendAdds: context.trendAdds !== null && context.trendAdds !== undefined && context.trendAdds !== "" && Number.isFinite(Number(context.trendAdds)) && Number(context.trendAdds) >= 0 ? Number(context.trendAdds) : null,
+      trendDrops: context.trendDrops !== null && context.trendDrops !== undefined && context.trendDrops !== "" && Number.isFinite(Number(context.trendDrops)) && Number(context.trendDrops) >= 0 ? Number(context.trendDrops) : null,
+      practiceParticipation: String(context.practiceParticipation || "").slice(0, 120),
       updatedAt: context.updatedAt && !Number.isNaN(Date.parse(context.updatedAt)) ? context.updatedAt : snapshot.generatedAt,
       sourceUrl: String(context.sourceUrl || snapshot.source.url || "").slice(0, 500),
     };
   }
+  const sources = safeArray(snapshot.sources).filter(isObject).slice(0, 10).map((source) => ({
+    id: String(source.id || "").slice(0, 80),
+    name: String(source.name || "").slice(0, 120),
+    url: String(source.url || "").slice(0, 500),
+    fetchedAt: source.fetchedAt && !Number.isNaN(Date.parse(source.fetchedAt)) ? source.fetchedAt : snapshot.generatedAt,
+    status: source.status === "unavailable" ? "unavailable" : "available",
+    coverage: String(source.coverage || "").slice(0, 240),
+  }));
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     generatedAt: new Date(snapshot.generatedAt).toISOString(),
     source: { name: String(snapshot.source.name).slice(0, 120), url: String(snapshot.source.url || "").slice(0, 500), type: String(snapshot.source.type || "manual").slice(0, 40) },
     playerContext,
+    sources,
+    dataQuality: {
+      coverage: snapshot.dataQuality?.coverage === "partial" ? "partial" : snapshot.dataQuality?.coverage === "complete" ? "complete" : "unknown",
+      unavailableSources: safeArray(snapshot.dataQuality?.unavailableSources).map((id) => String(id).slice(0, 80)),
+      rankingInputs: String(snapshot.dataQuality?.rankingInputs || "").slice(0, 500),
+    },
   };
 }
 function activeSnapshot() {
-  return state.settings.manualSnapshot || state.deployedSnapshot;
+  const automated = state.deployedSnapshot;
+  const manual = state.settings.manualSnapshot;
+  if (!automated || !manual) return manual || automated;
+  const playerContext = { ...automated.playerContext };
+  for (const [playerId, manualContext] of Object.entries(manual.playerContext)) {
+    const automatedContext = playerContext[playerId] || {};
+    const definedManualContext = Object.fromEntries(Object.entries(manualContext).filter(([, value]) => value !== null && value !== ""));
+    playerContext[playerId] = { ...automatedContext, ...definedManualContext };
+  }
+  return {
+    ...automated,
+    source: manual.source,
+    playerContext,
+    sources: [...safeArray(automated.sources), ...(safeArray(manual.sources).length ? safeArray(manual.sources) : [{ ...manual.source, fetchedAt: manual.generatedAt, status: "available", coverage: "Advanced local override" }])],
+  };
 }
 function contextFor(playerId) {
   return activeSnapshot()?.playerContext?.[playerId] || null;
@@ -278,7 +323,7 @@ function contextNote(playerId) {
   return details.join(" · ");
 }
 function snapshotStatusText(snapshot) {
-  if (!snapshot) return "No context imported";
+  if (!snapshot) return "Automated context unavailable";
   return `${snapshot.source.name} · ${formatTime(snapshot.generatedAt)}`;
 }
 function normalizedName(value) {
@@ -405,7 +450,7 @@ function renderLeague(model) {
       <section class="subcard"><h3>Your roster</h3><div class="roster-groups"><div class="roster-group"><h3>Starters</h3>${playerRows(groups.starters)}</div><div class="roster-group"><h3>Bench</h3>${playerRows(groups.bench)}</div><div class="roster-group"><h3>IR / reserve</h3>${playerRows(groups.ir)}</div></div></section>
     </div></div>
     <div class="league-grid"><div class="stack">
-      <section class="subcard waiver-review"><h3>Tuesday waiver review</h3><p class="notice">Prioritized public-data suggestions only. Each proposal pairs an unrostered player with an optional bench drop based on roster depth, reported bye timing, and cited imported context. Review the player pool, waiver rules, and current news in Sleeper before acting. This app cannot submit a claim.</p><p class="notice">${activeSnapshot() ? `Context source: ${externalLink(activeSnapshot().source.url, activeSnapshot().source.name)} · generated ${escapeText(formatTime(activeSnapshot().generatedAt))}.` : "Live injury, usage, projection, and news context is unavailable until you load a source-attributed snapshot; no such claims are fabricated."}</p>${waiverReviewRows(review, model.leagueId)}</section>
+      <section class="subcard waiver-review"><h3>Tuesday waiver review</h3><p class="notice">Prioritized public-data suggestions only. Each proposal pairs an unrostered player with an optional bench drop based on roster depth, reported bye timing, automated Sleeper trend data, and any cited advanced context. Review the player pool, waiver rules, and current news in Sleeper before acting. This app cannot submit a claim.</p><p class="notice">${state.deployedSnapshot ? `Automated evidence: ${safeArray(state.deployedSnapshot.sources).filter((source) => source.status !== "unavailable").map((source) => externalLink(source.url, source.name)).join(" · ")} · generated ${escapeText(formatTime(state.deployedSnapshot.generatedAt))}.${state.deployedSnapshot.dataQuality?.coverage === "partial" ? " Some automated sources were unavailable; see coverage above." : ""}` : "Automated injury, trend, and usage evidence is unavailable because the Tuesday snapshot could not load; no such claims are fabricated."}</p>${waiverReviewRows(review, model.leagueId)}</section>
       <section class="subcard"><h3>Waiver / free-agent candidates</h3><p class="notice">Unrostered player-directory entries prioritized by basic roster need. Availability is calculated from this league’s Sleeper rosters; confirm waivers before acting.${activeSnapshot() ? ` Added context is attributed to ${escapeText(activeSnapshot().source.name)} at ${escapeText(formatTime(activeSnapshot().generatedAt))}.` : " No injury, news, or projection context is loaded."}</p><div class="candidate-list">${candidates.length ? candidates.map(({ id, player }, index) => `<div class="candidate"><span class="candidate-rank">${index + 1}</span><div><strong>${escapeText(playerName(player, id))}</strong><small>${escapeText([positionOf(player), player.team || "FA", player.status || "unknown status", contextNote(id)].filter(Boolean).join(" · "))}</small></div><span class="reason">${needs[0] ? `Fits ${escapeText(needs[0].position)} need` : "Depth option"}</span></div>`).join("") : '<p class="notice">No candidate list is available until the Sleeper player directory loads.</p>'}</div></section>
       <section class="subcard"><h3>Recent league transactions</h3><div class="transaction-list">${transactions.length ? transactions.map((item) => `<div class="player-chip"><div><strong>${escapeText(item.type)}</strong><small>${item.adds.length ? `Add: ${item.adds.map(escapeText).join(", ")}` : ""}${item.adds.length && item.drops.length ? " · " : ""}${item.drops.length ? `Drop: ${item.drops.map(escapeText).join(", ")}` : ""}</small></div><small>${escapeText(item.status)}</small></div>`).join("") : '<p class="notice">No transactions were returned for the current or prior matchup week.</p>'}</div></section>
     </div><div class="stack">
@@ -431,11 +476,15 @@ function renderSnapshotStatus() {
   $("trade-endpoint-input").value = state.settings.sourceConfig.tradeEndpoint;
   $("analyze-trade-with-endpoint-button").disabled = !state.settings.sourceConfig.tradeEndpoint;
   if (!snapshot) {
-    $("snapshot-message").textContent = "Source configuration, endpoint URL, and imported context are local to this browser. No provider credential can be entered or stored here.";
+    $("snapshot-coverage").innerHTML = "<strong>Automated coverage unavailable.</strong> The Tuesday snapshot could not be loaded. Refresh the baseline or use the public Sleeper league refresh; no news or projections will be invented.";
+    $("snapshot-message").textContent = "Automated context could not load in this browser. Source configuration and any advanced override remain local; no provider credential can be entered or stored here.";
     return;
   }
   const scope = Object.keys(snapshot.playerContext).length;
-  $("snapshot-message").textContent = `${state.settings.manualSnapshot ? "Imported" : "Deployed"} snapshot: ${snapshot.source.name}, generated ${formatTime(snapshot.generatedAt)}, with ${scope} player context record${scope === 1 ? "" : "s"}.${snapshot.source.url ? ` Attribution: ${snapshot.source.url}` : ""}`;
+  const sources = safeArray(snapshot.sources).length ? safeArray(snapshot.sources) : [{ ...snapshot.source, fetchedAt: snapshot.generatedAt, status: "available", coverage: "Source-level coverage was not reported by this older snapshot." }];
+  $("snapshot-coverage").innerHTML = `<strong>Coverage: ${escapeText(snapshot.dataQuality?.coverage || "unknown")} · ${scope} player records</strong>${sources.map((source) => `<span class="${source.status === "unavailable" ? "unavailable" : ""}">${externalLink(source.url, source.name || "Unnamed source")} — ${escapeText(source.status === "unavailable" ? "unavailable" : "updated")} ${escapeText(formatTime(source.fetchedAt))}${source.coverage ? ` · ${escapeText(source.coverage)}` : ""}</span>`).join("")}${snapshot.dataQuality?.rankingInputs ? `<span>${escapeText(snapshot.dataQuality.rankingInputs)}</span>` : ""}`;
+  const automated = state.deployedSnapshot;
+  $("snapshot-message").textContent = `${automated ? `Automated baseline generated ${formatTime(automated.generatedAt)}.` : "No automated baseline is loaded."}${state.settings.manualSnapshot ? " An advanced local override is supplementing matching player context." : ""} ${scope} player context records are available locally.`;
 }
 function renderTradeAnalysis(analysis, remoteText = "") {
   const result = $("trade-analysis-result");

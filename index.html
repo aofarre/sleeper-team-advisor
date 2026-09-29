@@ -55,31 +55,38 @@
           <div><p class="eyebrow">TUESDAY WAIVER INTELLIGENCE</p><h2 id="intelligence-title">Sources and weekly snapshot</h2></div>
           <span id="snapshot-status" class="tag">No context imported</span>
         </div>
-        <p class="help-text">The deployed Tuesday baseline is a timestamped public Sleeper player-directory snapshot. It can establish player status and identity, but cannot establish league-specific availability, injury news, or projections. Add those only through a lawful manual or licensed-provider snapshot that names its source.</p>
-        <div class="source-grid">
-          <label>Context source name
-            <input id="snapshot-source-name-input" type="text" placeholder="Example: Your licensed provider export" />
-          </label>
-          <label>Source URL or attribution
-            <input id="snapshot-source-url-input" type="url" placeholder="https://provider.example/source" />
-          </label>
-          <label>Optional secure trade endpoint
-            <input id="trade-endpoint-input" type="url" inputmode="url" placeholder="https://your-service.example/api/trade-analysis" />
-          </label>
-          <button id="save-source-config-button" class="button" type="button">Save local config</button>
-        </div>
+        <p class="help-text">Roster Signal automatically loads a timestamped Tuesday baseline from documented Sleeper public endpoints. It combines player status/injury fields and seven-day Sleeper add/drop trends with your refreshed league rosters. No weekly website hunting or credential is required.</p>
+        <div id="snapshot-coverage" class="source-coverage" aria-live="polite"></div>
         <div class="setup-actions">
-          <button id="load-baseline-button" class="button" type="button">Load deployed Tuesday baseline</button>
-          <label class="file-label">Import snapshot JSON <input id="snapshot-file-input" type="file" accept="application/json" /></label>
+          <button id="load-baseline-button" class="button" type="button">Refresh automated baseline</button>
         </div>
-        <label>Manual or licensed-provider snapshot JSON
-          <textarea id="snapshot-json-input" spellcheck="false" placeholder='Paste the documented snapshot format. It remains in this browser until you remove local data.'></textarea>
-        </label>
-        <div class="setup-actions">
-          <button id="import-snapshot-button" class="button primary" type="button">Validate &amp; import locally</button>
-          <button id="clear-snapshot-button" class="button danger" type="button">Remove imported context</button>
-        </div>
-        <p id="snapshot-message" class="help-text">Source configuration, endpoint URL, and imported context are local to this browser. No provider credential can be entered or stored here.</p>
+        <p id="snapshot-message" class="help-text">Automated context loads in this browser. Source coverage and timestamps explain exactly what informed the review.</p>
+        <details class="advanced-sources">
+          <summary>Advanced: add a lawful local source override or secure trade endpoint</summary>
+          <p class="help-text">Optional only. An imported source can supplement the automated baseline with licensed projections or news; it must name and link its source. API keys are never entered here.</p>
+          <div class="source-grid">
+            <label>Override source name
+              <input id="snapshot-source-name-input" type="text" placeholder="Example: Your licensed provider export" />
+            </label>
+            <label>Source URL or attribution
+              <input id="snapshot-source-url-input" type="url" placeholder="https://provider.example/source" />
+            </label>
+            <label>Optional secure trade endpoint
+              <input id="trade-endpoint-input" type="url" inputmode="url" placeholder="https://your-service.example/api/trade-analysis" />
+            </label>
+            <button id="save-source-config-button" class="button" type="button">Save local config</button>
+          </div>
+          <div class="setup-actions">
+            <label class="file-label">Import snapshot JSON <input id="snapshot-file-input" type="file" accept="application/json" /></label>
+          </div>
+          <label>Manual or licensed-provider snapshot JSON
+            <textarea id="snapshot-json-input" spellcheck="false" placeholder='Paste the documented snapshot format. It remains in this browser until you remove local data.'></textarea>
+          </label>
+          <div class="setup-actions">
+            <button id="import-snapshot-button" class="button primary" type="button">Validate &amp; import locally</button>
+            <button id="clear-snapshot-button" class="button danger" type="button">Remove imported context</button>
+          </div>
+        </details>
       </section>
 
       <section class="card trade-analyzer" aria-labelledby="trade-title">

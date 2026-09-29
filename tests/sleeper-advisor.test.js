@@ -48,6 +48,7 @@ test("validates an attributed local player-context snapshot", () => {
   });
   assert.equal(snapshot.source.name, "Licensed context export");
   assert.equal(snapshot.playerContext.wr.valuation, 25);
+  assert.equal(snapshot.playerContext.wr.trendAdds, null);
   assert.throws(() => parseSnapshot({ schemaVersion: 1, generatedAt: "invalid", source: { name: "Source" }, playerContext: {} }), /generatedAt/);
   assert.throws(() => parseSnapshot({ schemaVersion: 1, generatedAt: "2026-09-29T14:00:00.000Z", source: { name: "Source" }, playerContext: { wr: { projection: "unknown" } } }), /Projection/);
 });
@@ -74,6 +75,7 @@ test("builds a review-only waiver add/drop list from Sleeper roster rules and at
     rb: { ...players.rb, bye_week: 7 },
     rb2: { first_name: "Spare", last_name: "Back", position: "RB", team: "EEE" },
     wr2: { first_name: "Waiver", last_name: "Wide", position: "WR", team: "FFF", bye_week: 5 },
+    wr3: { first_name: "Fallback", last_name: "Wide", position: "WR", team: "GGG" },
   };
   const review = buildWaiverReview({
     roster: { players: ["qb", "rb", "rb2", "wr"], starters: ["qb", "rb", "wr"] },
@@ -81,11 +83,35 @@ test("builds a review-only waiver add/drop list from Sleeper roster rules and at
     league: { roster_positions: ["QB", "RB", "RB", "WR", "WR", "TE"], settings: { playoff_week_start: 15 } },
     players: reviewPlayers,
     week: 4,
-    playerContext: { wr2: { projection: 12, valuation: 20, injury: "", news: "Imported source note" } },
+    playerContext: { wr2: { projection: 12, valuation: 20, trendAdds: 41, trendDrops: 0, injury: "", news: "Imported source note" } },
   });
   assert.equal(review.playoffWeek, 15);
   assert.equal(review.recommendations[0].add.id, "wr2");
   assert.equal(review.recommendations[0].drop.id, "rb2");
   assert.match(review.recommendations[0].add.reasons.join(" "), /imported projection 12/);
+  assert.match(review.recommendations[0].add.reasons.join(" "), /Sleeper 7-day adds 41/);
   assert.match(review.recommendations[0].add.reasons.join(" "), /playoffs start Week 15/);
+});
+test("normalizes automated Sleeper sources and preserves partial source failures", async () => {
+  const { normalizeTrending, buildAutomatedSnapshot } = await import("../scripts/refresh-sleeper-snapshot.mjs");
+  assert.deepEqual(normalizeTrending([{ player_id: "wr", count: 42 }, { player_id: "", count: 2 }, { player_id: "bad", count: "unknown" }]), { wr: 42 });
+  const generatedAt = "2026-09-29T18:00:00.000Z";
+  const snapshot = buildAutomatedSnapshot({
+    generatedAt,
+    players: { wr: { ...players.wr, active: true, injury_status: "Questionable", practice_participation: "Limited" } },
+    nflState: { season: "2026", week: 4, season_type: "regular" },
+    trendingAdds: [{ player_id: "wr", count: 42 }],
+    trendingDrops: [],
+    results: {
+      directory: { ok: true },
+      state: { ok: true },
+      trendingAdds: { ok: true },
+      trendingDrops: { ok: false, error: "503 Service Unavailable" },
+    },
+  });
+  assert.equal(snapshot.dataQuality.coverage, "partial");
+  assert.deepEqual(snapshot.dataQuality.unavailableSources, ["sleeper-trending-drops"]);
+  assert.equal(snapshot.playerContext.wr.trendAdds, 42);
+  assert.equal(snapshot.playerContext.wr.injury, "Questionable");
+  assert.equal(snapshot.sources.find((source) => source.id === "sleeper-trending-drops").status, "unavailable");
 });
